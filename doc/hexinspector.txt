@@ -1,0 +1,90 @@
+*hexinspector.txt*  A hex editor and binary data inspector for Neovim
+
+==============================================================================
+HEXINSPECTOR                                              *hexinspector*
+
+A floating hex editor with a data inspector panel, visual selection,
+search/replace, undo/redo, vertex template overlays, and streaming
+support for large files (64MB+).
+
+==============================================================================
+COMMANDS                                         *hexinspector-commands*
+
+:HexEdit [path]                                           *:HexEdit*
+    Open the hex editor. If [path] is omitted, opens the current buffer's
+    file.
+
+:HexInspect [path]                                        *:HexInspect*
+    Alias for |:HexEdit|.
+
+==============================================================================
+KEYBINDINGS                                      *hexinspector-keys*
+
+These keys are active inside the hex editor floating window:
+
+    e       Edit byte (hex input)
+    E       Edit byte (ASCII input)
+    m       Edit multi-byte (hex input)
+    I       Insert bytes at cursor
+    x       Delete byte(s) (or selection)
+    v       Toggle visual selection
+    y       Yank bytes (selection or prompted count)
+    p       Paste bytes (overwrite or insert)
+    F       Fill range with a byte value
+    R       Find and replace hex pattern
+    w       Write changes to disk
+    u       Undo
+    U       Redo
+    g       Jump to offset (hex or decimal)
+    /       Search hex bytes
+    n       Next search match
+    T       Cycle vertex template
+    t       Pick vertex template from list
+    <C-d>   Page down
+    <C-u>   Page up
+    G       Jump to end of file
+    gg      Jump to start of file
+    q       Quit
+    <Esc>   Clear selection or quit
+
+==============================================================================
+SETUP                                            *hexinspector-setup*
+
+With lazy.nvim:
+>lua
+    {
+      "Punity122333/hexinspector.nvim",
+      cmd = { "HexEdit", "HexInspect" },
+      keys = {
+        { "<leader>zx", function() require("hexinspector").open() end, desc = "Hex Editor" },
+      },
+      opts = {},
+    }
+<
+
+With packer.nvim:
+>lua
+    use {
+      "Punity122333/hexinspector.nvim",
+      config = function()
+        require("hexinspector").setup({})
+      end,
+    }
+<
+
+==============================================================================
+FEATURES                                         *hexinspector-features*
+
+- Floating hex view with address, hex bytes, and ASCII columns
+- Side panel data inspector (uint8/16/32, int8/16/32, float32/64, binary)
+- Vertex buffer template overlays (Pos+Color, Pos+UV+Normal, RGBA8888, etc.)
+- Visual byte selection with yank/delete/fill
+- Hex byte search with wrap-around
+- Find and replace hex patterns
+- Insert and delete bytes (small files)
+- Undo/redo stack (up to 200 levels)
+- Streaming mode for files larger than 64MB
+- Clipboard integration (system + register)
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:

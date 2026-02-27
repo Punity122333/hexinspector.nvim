@@ -29,6 +29,10 @@ Most hex editors let you look at bytes. hexinspector lets you **understand** the
 
 - Neovim >= 0.9.0
 
+## Demo
+
+![HexInspector Demo](./truncated_demo.gif)
+
 ## Installation
 
 ### lazy.nvim

@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-global
 if vim.g.loaded_hexinspector then
   return
 end

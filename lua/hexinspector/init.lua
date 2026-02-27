@@ -1,21 +1,36 @@
----@diagnostic disable: param-type-mismatch
+---@diagnostic disable: param-type-mismatch, undefined-global, deprecated
 local M = {}
 
-local god_bg = "#1a1b26"
-local dark_bg = "#1a1b26"
-local border_fg = "#115e72"
-local addr_fg = "#565f89"
-local hex_fg = "#c0caf5"
-local ascii_fg = "#9ece6a"
-local null_fg = "#3b4261"
-local highlight_bg = "#28344a"
-local float_fg = "#ff9e64"
-local int_fg = "#bb9af7"
-local uint_fg = "#7dcfff"
-local title_fg = "#7aa2f7"
-local search_fg = "#f7768e"
-local modified_fg = "#f7768e"
-local selection_bg = "#2d4f67"
+local default_colors = {
+  bg = "#1a1b26",
+  info_bg = "#1a1b26",
+  border = "#115e72",
+  addr = "#565f89",
+  hex = "#c0caf5",
+  ascii = "#9ece6a",
+  null = "#3b4261",
+  cursor_bg = "#28344a",
+  cursor_line_bg = "#1e2030",
+  float = "#ff9e64",
+  int = "#bb9af7",
+  uint = "#7dcfff",
+  title = "#7aa2f7",
+  search = "#f7768e",
+  modified = "#f7768e",
+  selection_bg = "#2d4f67",
+}
+
+local config = {
+  colors = {},
+  bytes_per_line = 24,
+  max_undo = 200,
+  chunk_size = 1024 * 1024,
+  max_memory_file = 64 * 1024 * 1024,
+}
+
+local function get_color(key)
+  return config.colors[key] or default_colors[key]
+end
 
 local BYTES_PER_LINE = 24
 local PAD = " "
@@ -24,6 +39,15 @@ local ASCII_START_COL = HEX_START_COL + (BYTES_PER_LINE * 3)
 local MAX_UNDO = 200
 local CHUNK_SIZE = 1024 * 1024
 local MAX_MEMORY_FILE = 64 * 1024 * 1024
+
+local function apply_config()
+  BYTES_PER_LINE = config.bytes_per_line or 24
+  HEX_START_COL = 12
+  ASCII_START_COL = HEX_START_COL + (BYTES_PER_LINE * 3)
+  MAX_UNDO = config.max_undo or 200
+  CHUNK_SIZE = config.chunk_size or (1024 * 1024)
+  MAX_MEMORY_FILE = config.max_memory_file or (64 * 1024 * 1024)
+end
 
 local vertex_templates = {
   {
@@ -215,27 +239,29 @@ end
 
 local function setup_highlights()
   local hl = vim.api.nvim_set_hl
-  hl(0, "HexInspAddr", { fg = addr_fg, bg = god_bg, bold = true })
-  hl(0, "HexInspByte", { fg = hex_fg, bg = god_bg })
-  hl(0, "HexInspNull", { fg = null_fg, bg = god_bg })
-  hl(0, "HexInspAscii", { fg = ascii_fg, bg = god_bg })
-  hl(0, "HexInspNonPrint", { fg = null_fg, bg = god_bg })
-  hl(0, "HexInspCursor", { bg = highlight_bg, fg = hex_fg, bold = true })
-  hl(0, "HexInspFloat", { fg = float_fg, bg = dark_bg, bold = true })
-  hl(0, "HexInspInt", { fg = int_fg, bg = dark_bg })
-  hl(0, "HexInspUint", { fg = uint_fg, bg = dark_bg })
-  hl(0, "HexInspTitle", { fg = title_fg, bg = god_bg, bold = true })
-  hl(0, "HexInspBorder", { fg = border_fg, bg = god_bg })
-  hl(0, "HexInspNormal", { fg = hex_fg, bg = god_bg })
-  hl(0, "HexInspInfoNormal", { fg = hex_fg, bg = dark_bg })
-  hl(0, "HexInspInfoBorder", { fg = border_fg, bg = dark_bg })
-  hl(0, "HexInspSearch", { fg = search_fg, bg = god_bg, bold = true })
-  hl(0, "HexInspLabel", { fg = addr_fg, bg = dark_bg })
-  hl(0, "HexInspSep", { fg = null_fg, bg = god_bg })
-  hl(0, "HexInspBackdrop", { bg = god_bg })
-  hl(0, "HexInspModified", { fg = modified_fg, bg = god_bg, bold = true })
-  hl(0, "HexInspSelection", { bg = selection_bg, fg = hex_fg })
-  hl(0, "HexInspCursorLine", { bg = "#1e2030" })
+  local bg = get_color("bg")
+  local info_bg = get_color("info_bg")
+  hl(0, "HexInspAddr", { fg = get_color("addr"), bg = bg, bold = true })
+  hl(0, "HexInspByte", { fg = get_color("hex"), bg = bg })
+  hl(0, "HexInspNull", { fg = get_color("null"), bg = bg })
+  hl(0, "HexInspAscii", { fg = get_color("ascii"), bg = bg })
+  hl(0, "HexInspNonPrint", { fg = get_color("null"), bg = bg })
+  hl(0, "HexInspCursor", { bg = get_color("cursor_bg"), fg = get_color("hex"), bold = true })
+  hl(0, "HexInspFloat", { fg = get_color("float"), bg = info_bg, bold = true })
+  hl(0, "HexInspInt", { fg = get_color("int"), bg = info_bg })
+  hl(0, "HexInspUint", { fg = get_color("uint"), bg = info_bg })
+  hl(0, "HexInspTitle", { fg = get_color("title"), bg = bg, bold = true })
+  hl(0, "HexInspBorder", { fg = get_color("border"), bg = bg })
+  hl(0, "HexInspNormal", { fg = get_color("hex"), bg = bg })
+  hl(0, "HexInspInfoNormal", { fg = get_color("hex"), bg = info_bg })
+  hl(0, "HexInspInfoBorder", { fg = get_color("border"), bg = info_bg })
+  hl(0, "HexInspSearch", { fg = get_color("search"), bg = bg, bold = true })
+  hl(0, "HexInspLabel", { fg = get_color("addr"), bg = info_bg })
+  hl(0, "HexInspSep", { fg = get_color("null"), bg = bg })
+  hl(0, "HexInspBackdrop", { bg = bg })
+  hl(0, "HexInspModified", { fg = get_color("modified"), bg = bg, bold = true })
+  hl(0, "HexInspSelection", { bg = get_color("selection_bg"), fg = get_color("hex") })
+  hl(0, "HexInspCursorLine", { bg = get_color("cursor_line_bg") })
 end
 
 local function get_file_size(path)
@@ -1851,6 +1877,28 @@ function M.open(path)
 end
 
 function M.setup(opts)
+  opts = opts or {}
+  if opts.colors then
+    config.colors = vim.tbl_extend("force", config.colors, opts.colors)
+  end
+  if opts.bytes_per_line then
+    config.bytes_per_line = opts.bytes_per_line
+  end
+  if opts.max_undo then
+    config.max_undo = opts.max_undo
+  end
+  if opts.chunk_size then
+    config.chunk_size = opts.chunk_size
+  end
+  if opts.max_memory_file then
+    config.max_memory_file = opts.max_memory_file
+  end
+  if opts.vertex_templates then
+    for _, t in ipairs(opts.vertex_templates) do
+      table.insert(vertex_templates, t)
+    end
+  end
+  apply_config()
 end
 
 return M

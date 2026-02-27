@@ -73,6 +73,56 @@ With packer.nvim:
 <
 
 ==============================================================================
+CONFIGURATION                                    *hexinspector-config*
+
+The setup function accepts a table with the following keys:
+
+    bytes_per_line                      Default: 24
+        Number of bytes shown per row.
+
+    max_undo                            Default: 200
+        Maximum undo history entries.
+
+    max_memory_file                     Default: 67108864 (64 MB)
+        Files larger than this use streaming mode.
+
+    colors                              Table of color overrides.
+        Override any subset of the default palette:
+
+        bg              Main background            "#1a1b26"
+        info_bg         Inspector panel background "#1a1b26"
+        border          Window border              "#115e72"
+        addr            Address column             "#565f89"
+        hex             Hex byte text              "#c0caf5"
+        ascii           ASCII column               "#9ece6a"
+        null            Null bytes / separators    "#3b4261"
+        cursor_bg       Cursor highlight           "#28344a"
+        cursor_line_bg  Cursor line background     "#1e2030"
+        float           Float values               "#ff9e64"
+        int             Signed integers            "#bb9af7"
+        uint            Unsigned integers          "#7dcfff"
+        title           Titles                     "#7aa2f7"
+        search          Search highlights          "#f7768e"
+        modified        Modified marker            "#f7768e"
+        selection_bg    Selection background        "#2d4f67"
+
+    vertex_templates                    List of additional templates.
+        Each entry is a table with `name`, `stride`, and `fields`.
+
+Example:
+>lua
+    require("hexinspector").setup({
+      bytes_per_line = 16,
+      max_undo = 100,
+      colors = {
+        bg = "#282828",
+        hex = "#ebdbb2",
+        ascii = "#b8bb26",
+      },
+    })
+<
+
+==============================================================================
 FEATURES                                         *hexinspector-features*
 
 - Floating hex view with address, hex bytes, and ASCII columns

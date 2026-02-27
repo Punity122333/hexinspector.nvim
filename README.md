@@ -41,7 +41,30 @@ A floating hex editor and binary data inspector for Neovim.
       desc = "Hex Editor (Pick File)",
     },
   },
-  opts = {},
+  opts = {
+    -- All options are optional. Shown below are the defaults.
+    -- bytes_per_line = 24,
+    -- max_undo = 200,
+    -- max_memory_file = 64 * 1024 * 1024,
+    -- colors = {
+    --   bg           = "#1a1b26",
+    --   info_bg      = "#1a1b26",
+    --   border       = "#115e72",
+    --   addr         = "#565f89",
+    --   hex          = "#c0caf5",
+    --   ascii        = "#9ece6a",
+    --   null         = "#3b4261",
+    --   cursor_bg    = "#28344a",
+    --   cursor_line_bg = "#1e2030",
+    --   float        = "#ff9e64",
+    --   int          = "#bb9af7",
+    --   uint         = "#7dcfff",
+    --   title        = "#7aa2f7",
+    --   search       = "#f7768e",
+    --   modified     = "#f7768e",
+    --   selection_bg = "#2d4f67",
+    -- },
+  },
 }
 ```
 
@@ -51,7 +74,9 @@ A floating hex editor and binary data inspector for Neovim.
 use {
   "Punity122333/hexinspector.nvim",
   config = function()
-    require("hexinspector").setup({})
+    require("hexinspector").setup({
+      -- colors = { bg = "#282828", hex = "#ebdbb2" },
+    })
   end,
 }
 ```

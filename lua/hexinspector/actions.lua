@@ -394,6 +394,13 @@ end
 
 function M.close_inspector()
   local file_path = state.file_path
+  local prev_win = state.prev_win
+
+  local function restore_focus()
+    if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+      vim.api.nvim_set_current_win(prev_win)
+    end
+  end
 
   local function reload_source_buffer()
     if not file_path or file_path == "" then
@@ -438,6 +445,7 @@ function M.close_inspector()
     if saved then
       vim.schedule(reload_source_buffer)
     end
+    vim.schedule(restore_focus)
   end
 
   if state.dirty then

@@ -24,6 +24,8 @@ function M.open(path)
 
   highlights.setup_highlights()
 
+  state.prev_win = vim.api.nvim_get_current_win()
+
   local fsize = fileio.get_file_size(path)
   if not fsize or fsize == 0 then
     vim.notify("HexEditor: File is empty or unreadable", vim.log.levels.ERROR)

@@ -26,6 +26,8 @@ M.chunk_cache = {}
 M.chunk_dirty = {}
 M.current_template = 1
 
+M.prev_win = nil
+
 M.viewport_line_cache = {}
 M.viewport_cache_valid = false
 
@@ -54,6 +56,7 @@ function M.reset()
   M.big_file = false
   M.chunk_cache = {}
   M.chunk_dirty = {}
+  M.prev_win = nil
   M.invalidate_viewport_cache()
 end
 

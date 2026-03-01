@@ -393,7 +393,25 @@ function M.do_replace_pattern()
 end
 
 function M.close_inspector()
-  local function do_close()
+  local file_path = state.file_path
+
+  local function reload_source_buffer()
+    if not file_path or file_path == "" then
+      return
+    end
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) then
+        local name = vim.api.nvim_buf_get_name(buf)
+        if name == file_path then
+          vim.api.nvim_buf_call(buf, function()
+            vim.cmd("edit!")
+          end)
+        end
+      end
+    end
+  end
+
+  local function do_close(saved)
     if state.cursor_au then
       vim.api.nvim_del_autocmd(state.cursor_au)
       state.cursor_au = nil
@@ -417,6 +435,9 @@ function M.close_inspector()
       vim.api.nvim_buf_delete(state.backdrop_buf, { force = true })
     end
     state.reset()
+    if saved then
+      vim.schedule(reload_source_buffer)
+    end
   end
 
   if state.dirty then
@@ -425,13 +446,13 @@ function M.close_inspector()
     }, function(choice)
       if choice == "Save and quit" then
         M.do_save()
-        do_close()
+        do_close(true)
       elseif choice == "Quit without saving" then
-        do_close()
+        do_close(false)
       end
     end)
   else
-    do_close()
+    do_close(true)
   end
 end
 

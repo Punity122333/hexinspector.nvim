@@ -524,11 +524,30 @@ function M.do_byte_histogram()
   vim.api.nvim_buf_set_lines(hist_buf, 0, -1, false, lines)
   vim.bo[hist_buf].modifiable = false
 
+  local hist_backdrop_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[hist_backdrop_buf].buftype = "nofile"
+  vim.bo[hist_backdrop_buf].bufhidden = "wipe"
+  vim.bo[hist_backdrop_buf].swapfile = false
+  local hist_backdrop_win = vim.api.nvim_open_win(hist_backdrop_buf, false, {
+    relative = "editor",
+    width = ui_width,
+    height = ui_height,
+    row = 0,
+    col = 0,
+    style = "minimal",
+    border = "none",
+    focusable = false,
+    zindex = 55,
+    noautocmd = true,
+  })
+  vim.wo[hist_backdrop_win].winblend = 0
+  vim.wo[hist_backdrop_win].winhighlight = "Normal:HexInspBackdrop"
+
   local hist_win = vim.api.nvim_open_win(hist_buf, true, {
     relative = "editor",
     width = win_width,
     height = win_height,
-    row = math.floor((ui_height - win_height) / 2),
+    row = math.floor((ui_height - win_height) / 2) - 1,
     col = math.floor((ui_width - win_width) / 2),
     style = "minimal",
     border = "rounded",
@@ -554,6 +573,12 @@ function M.do_byte_histogram()
     end
     if hist_buf and vim.api.nvim_buf_is_valid(hist_buf) then
       vim.api.nvim_buf_delete(hist_buf, { force = true })
+    end
+    if hist_backdrop_win and vim.api.nvim_win_is_valid(hist_backdrop_win) then
+      vim.api.nvim_win_close(hist_backdrop_win, true)
+    end
+    if hist_backdrop_buf and vim.api.nvim_buf_is_valid(hist_backdrop_buf) then
+      vim.api.nvim_buf_delete(hist_backdrop_buf, { force = true })
     end
     if state.main_win and vim.api.nvim_win_is_valid(state.main_win) then
       vim.api.nvim_set_current_win(state.main_win)

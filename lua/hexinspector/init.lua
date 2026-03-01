@@ -34,7 +34,7 @@ end
 
 local BYTES_PER_LINE = 24
 local PAD = " "
-local HEX_START_COL = 12
+local HEX_START_COL = 14
 local ASCII_START_COL = HEX_START_COL + (BYTES_PER_LINE * 3)
 local MAX_UNDO = 200
 local CHUNK_SIZE = 1024 * 1024
@@ -42,7 +42,7 @@ local MAX_MEMORY_FILE = 64 * 1024 * 1024
 
 local function apply_config()
   BYTES_PER_LINE = config.bytes_per_line or 24
-  HEX_START_COL = 12
+  HEX_START_COL = 14
   ASCII_START_COL = HEX_START_COL + (BYTES_PER_LINE * 3)
   MAX_UNDO = config.max_undo or 200
   CHUNK_SIZE = config.chunk_size or (1024 * 1024)
@@ -654,7 +654,7 @@ local function apply_line_highlights(buf, lines, data, base_line)
     local line_offset = (base_line + row) * BYTES_PER_LINE
 
     vim.api.nvim_buf_add_highlight(buf, ns, "HexInspAddr", row, 1, 9)
-    vim.api.nvim_buf_add_highlight(buf, ns, "HexInspSep", row, 9, 12)
+    vim.api.nvim_buf_add_highlight(buf, ns, "HexInspSep", row, 9, 14)
 
     local col = HEX_START_COL
     for i = 0, BYTES_PER_LINE - 1 do
@@ -733,25 +733,43 @@ local function get_byte_offset_from_cursor()
   local col = cursor[2]
   local line_offset = row * BYTES_PER_LINE
 
+  local line = vim.api.nvim_buf_get_lines(state.main_buf, row, row + 1, false)[1]
+  if line then
+    local ascii_byte_start = #line - BYTES_PER_LINE
+    if col >= ascii_byte_start then
+      local byte_idx = col - ascii_byte_start
+      if byte_idx >= BYTES_PER_LINE then
+        byte_idx = BYTES_PER_LINE - 1
+      end
+      local offset = line_offset + byte_idx
+      if offset >= state.file_size then
+        offset = state.file_size - 1
+      end
+      if offset < 0 then
+        offset = 0
+      end
+      return offset
+    end
+  end
+
   if col < HEX_START_COL then
     return line_offset
   end
 
   local hex_col = col - HEX_START_COL
   local byte_idx = 0
-  local group_count = 0
 
   for i = 0, BYTES_PER_LINE - 1 do
-    if i > 0 and i % 4 == 0 then
-      group_count = group_count + 1
-    end
+    local group_count = math.floor(i / 4)
     local start_c = i * 3 + group_count
-    local end_c = start_c + 2
-    if hex_col >= start_c and hex_col < end_c then
-      byte_idx = i
-      break
+    local next_start
+    if i < BYTES_PER_LINE - 1 then
+      local next_group = math.floor((i + 1) / 4)
+      next_start = (i + 1) * 3 + next_group
+    else
+      next_start = start_c + 3
     end
-    if hex_col >= start_c and hex_col < start_c + 3 then
+    if hex_col >= start_c and hex_col < next_start then
       byte_idx = i
       break
     end

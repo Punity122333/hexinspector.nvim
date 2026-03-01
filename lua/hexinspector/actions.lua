@@ -5,6 +5,7 @@ local buffer = require("hexinspector.buffer")
 local display = require("hexinspector.display")
 local cursor = require("hexinspector.cursor")
 local highlights = require("hexinspector.highlights")
+local cfg = require("hexinspector.config")
 
 local M = {}
 
@@ -390,6 +391,177 @@ function M.do_replace_pattern()
       vim.notify(string.format("Replaced %d occurrences", count), vim.log.levels.INFO)
     end)
   end)
+end
+
+function M.do_toggle_endian()
+  state.big_endian = not state.big_endian
+  local label = state.big_endian and "Big-Endian" or "Little-Endian"
+  display.update_title()
+  local off = cursor.get_byte_offset_from_cursor()
+  cursor.update_info_window(off)
+  vim.notify("Endianness: " .. label, vim.log.levels.INFO)
+end
+
+function M.do_byte_histogram()
+  local data_bytes = {}
+  if state.selecting and state.selection_start then
+    local off = cursor.get_byte_offset_from_cursor()
+    local sel_s = math.min(state.selection_start, state.selection_end or off)
+    local sel_e = math.max(state.selection_start, state.selection_end or off)
+    for i = sel_s, sel_e do
+      local b = fileio.get_byte(i)
+      if b then
+        table.insert(data_bytes, b)
+      end
+    end
+  elseif not state.big_file and state.raw_data then
+    for i = 1, #state.raw_data do
+      table.insert(data_bytes, string.byte(state.raw_data, i))
+    end
+  else
+    local off = cursor.get_byte_offset_from_cursor()
+    local count = math.min(cfg.BYTES_PER_LINE * 64, state.file_size - off)
+    for i = off, off + count - 1 do
+      local b = fileio.get_byte(i)
+      if b then
+        table.insert(data_bytes, b)
+      end
+    end
+  end
+
+  if #data_bytes == 0 then
+    vim.notify("No data to analyze", vim.log.levels.WARN)
+    return
+  end
+
+  local freq = {}
+  for i = 0, 255 do
+    freq[i] = 0
+  end
+  for _, b in ipairs(data_bytes) do
+    freq[b] = freq[b] + 1
+  end
+
+  local max_freq = 0
+  for i = 0, 255 do
+    if freq[i] > max_freq then
+      max_freq = freq[i]
+    end
+  end
+
+  local bar_width = 20
+  local lines = {}
+  local hl_entries = {}
+
+  table.insert(lines, string.format(" Byte Frequency (%d bytes analyzed)", #data_bytes))
+  table.insert(hl_entries, { "HexInspTitle", #lines })
+  table.insert(lines, "")
+
+  local nonzero = {}
+  for i = 0, 255 do
+    if freq[i] > 0 then
+      table.insert(nonzero, i)
+    end
+  end
+
+  table.sort(nonzero, function(a, b)
+    return freq[a] > freq[b]
+  end)
+
+  local shown = math.min(#nonzero, 32)
+  for idx = 1, shown do
+    local byte_val = nonzero[idx]
+    local count = freq[byte_val]
+    local pct = (count / #data_bytes) * 100
+    local bar_len = max_freq > 0 and math.floor((count / max_freq) * bar_width) or 0
+    if bar_len < 1 and count > 0 then
+      bar_len = 1
+    end
+    local bar = string.rep("█", bar_len) .. string.rep("░", bar_width - bar_len)
+    local label = string.format(" %02X %s %5d %5.1f%%", byte_val, bar, count, pct)
+    table.insert(lines, label)
+    table.insert(hl_entries, { "HexInspUint", #lines })
+  end
+
+  if #nonzero > shown then
+    table.insert(lines, string.format(" ... and %d more byte values", #nonzero - shown))
+    table.insert(hl_entries, { "HexInspLabel", #lines })
+  end
+
+  table.insert(lines, "")
+  table.insert(lines, string.format(" Unique bytes: %d/256", #nonzero))
+  table.insert(hl_entries, { "HexInspLabel", #lines })
+
+  local zero_count = freq[0] or 0
+  local null_pct = (#data_bytes > 0) and (zero_count / #data_bytes * 100) or 0
+  table.insert(lines, string.format(" Null bytes:   %d (%.1f%%)", zero_count, null_pct))
+  table.insert(hl_entries, { "HexInspLabel", #lines })
+
+  local printable = 0
+  for _, b in ipairs(data_bytes) do
+    if b >= 0x20 and b <= 0x7E then
+      printable = printable + 1
+    end
+  end
+  local print_pct = (#data_bytes > 0) and (printable / #data_bytes * 100) or 0
+  table.insert(lines, string.format(" Printable:    %d (%.1f%%)", printable, print_pct))
+  table.insert(hl_entries, { "HexInspLabel", #lines })
+
+  table.insert(lines, "")
+  table.insert(lines, " Press q or <Esc> to close")
+  table.insert(hl_entries, { "HexInspLabel", #lines })
+
+  local win_width = 42
+  local win_height = math.min(#lines, vim.o.lines - 6)
+  local ui_width = vim.o.columns
+  local ui_height = vim.o.lines
+
+  local hist_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[hist_buf].buftype = "nofile"
+  vim.bo[hist_buf].bufhidden = "wipe"
+  vim.bo[hist_buf].swapfile = false
+  vim.bo[hist_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(hist_buf, 0, -1, false, lines)
+  vim.bo[hist_buf].modifiable = false
+
+  local hist_win = vim.api.nvim_open_win(hist_buf, true, {
+    relative = "editor",
+    width = win_width,
+    height = win_height,
+    row = math.floor((ui_height - win_height) / 2),
+    col = math.floor((ui_width - win_width) / 2),
+    style = "minimal",
+    border = "rounded",
+    title = " Byte Histogram ",
+    title_pos = "center",
+    zindex = 60,
+  })
+
+  vim.wo[hist_win].number = false
+  vim.wo[hist_win].relativenumber = false
+  vim.wo[hist_win].signcolumn = "no"
+  vim.wo[hist_win].wrap = false
+  vim.wo[hist_win].winhighlight = "Normal:HexInspInfoNormal,FloatBorder:HexInspBorder,FloatTitle:HexInspTitle"
+
+  local ns = vim.api.nvim_create_namespace("HexInspHistogram")
+  for _, entry in ipairs(hl_entries) do
+    vim.api.nvim_buf_add_highlight(hist_buf, ns, entry[1], entry[2] - 1, 0, -1)
+  end
+
+  local function close_histogram()
+    if hist_win and vim.api.nvim_win_is_valid(hist_win) then
+      vim.api.nvim_win_close(hist_win, true)
+    end
+    if hist_buf and vim.api.nvim_buf_is_valid(hist_buf) then
+      vim.api.nvim_buf_delete(hist_buf, { force = true })
+    end
+    if state.main_win and vim.api.nvim_win_is_valid(state.main_win) then
+      vim.api.nvim_set_current_win(state.main_win)
+    end
+  end
+
+  vim.keymap.set("n", "q", close_histogram, { buffer = hist_buf, nowait = true, silent = true })
+  vim.keymap.set("n", "<Esc>", close_histogram, { buffer = hist_buf, nowait = true, silent = true })
 end
 
 function M.close_inspector()

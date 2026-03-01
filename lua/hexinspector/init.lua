@@ -102,7 +102,8 @@ function M.open(path)
   end
   local tpl = templates.list[state.current_template]
   local big_mark = state.big_file and " │ STREAM" or ""
-  local title = " HexEditor │ " .. fname .. " │ " .. size_str .. " │ " .. tpl.name .. big_mark .. " "
+  local endian_mark = state.big_endian and " │ BE" or " │ LE"
+  local title = " HexEditor │ " .. fname .. " │ " .. size_str .. " │ " .. tpl.name .. endian_mark .. big_mark .. " "
 
   state.backdrop_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[state.backdrop_buf].buftype = "nofile"
@@ -230,6 +231,8 @@ function M.open(path)
   vim.keymap.set("n", "p", actions.do_paste, kopts)
   vim.keymap.set("n", "F", actions.do_fill_range, kopts)
   vim.keymap.set("n", "R", actions.do_replace_pattern, kopts)
+  vim.keymap.set("n", "B", actions.do_toggle_endian, kopts)
+  vim.keymap.set("n", "H", actions.do_byte_histogram, kopts)
 
   vim.keymap.set("n", "T", function()
     state.current_template = (state.current_template % #templates.list) + 1

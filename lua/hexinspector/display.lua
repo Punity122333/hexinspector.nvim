@@ -129,7 +129,8 @@ function M.update_title()
   local dirty_mark = state.dirty and " [+]" or ""
   local tpl = templates.list[state.current_template]
   local big_mark = state.big_file and " │ STREAM" or ""
-  local title = " HexEditor │ " .. fname .. dirty_mark .. " │ " .. size_str .. " │ " .. tpl.name .. big_mark .. " "
+  local endian_mark = state.big_endian and " │ BE" or " │ LE"
+  local title = " HexEditor │ " .. fname .. dirty_mark .. " │ " .. size_str .. " │ " .. tpl.name .. endian_mark .. big_mark .. " "
   vim.api.nvim_win_set_config(state.main_win, { title = title, title_pos = "center" })
 end
 

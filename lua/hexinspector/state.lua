@@ -25,6 +25,7 @@ M.file_handle = nil
 M.chunk_cache = {}
 M.chunk_dirty = {}
 M.current_template = 1
+M.big_endian = false
 
 M.prev_win = nil
 
@@ -54,6 +55,7 @@ function M.reset()
   M.selection_start = nil
   M.selection_end = nil
   M.big_file = false
+  M.big_endian = false
   M.chunk_cache = {}
   M.chunk_dirty = {}
   M.prev_win = nil

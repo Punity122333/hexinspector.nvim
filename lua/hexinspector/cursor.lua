@@ -114,6 +114,10 @@ function M.update_info_window(offset)
   table.insert(lines, " Offset: 0x" .. string.format("%08X", offset) .. " (" .. offset .. ")")
   table.insert(hl_map, { "HexInspTitle", #lines })
 
+  local endian_label = state.big_endian and "BE" or "LE"
+  table.insert(lines, " Endian:  " .. endian_label)
+  table.insert(hl_map, { "HexInspLabel", #lines })
+
   table.insert(lines, "")
 
   local b = unpack.u8(slice, 1)
@@ -140,29 +144,29 @@ function M.update_info_window(offset)
 
   if #slice >= 2 and offset + 2 <= size then
     table.insert(lines, "")
-    local u16 = unpack.u16_le(slice, 1)
+    local u16 = unpack.u16(slice, 1)
     table.insert(lines, " Uint16:  " .. u16)
     table.insert(hl_map, { "HexInspUint", #lines })
-    local i16 = unpack.i16_le(slice, 1)
+    local i16 = unpack.i16(slice, 1)
     table.insert(lines, " Int16:   " .. i16)
     table.insert(hl_map, { "HexInspInt", #lines })
   end
 
   if #slice >= 4 and offset + 4 <= size then
     table.insert(lines, "")
-    local u32 = unpack.u32_le(slice, 1)
+    local u32 = unpack.u32(slice, 1)
     table.insert(lines, " Uint32:  " .. u32)
     table.insert(hl_map, { "HexInspUint", #lines })
-    local i32 = unpack.i32_le(slice, 1)
+    local i32 = unpack.i32(slice, 1)
     table.insert(lines, " Int32:   " .. i32)
     table.insert(hl_map, { "HexInspInt", #lines })
-    local f32 = unpack.f32_le(slice, 1)
+    local f32 = unpack.f32(slice, 1)
     table.insert(lines, string.format(" Float32: %.8g", f32))
     table.insert(hl_map, { "HexInspFloat", #lines })
   end
 
   if #slice >= 8 and offset + 8 <= size then
-    local f64 = unpack.f64_le(slice, 1)
+    local f64 = unpack.f64(slice, 1)
     table.insert(lines, string.format(" Float64: %.15g", f64))
     table.insert(hl_map, { "HexInspFloat", #lines })
   end
@@ -179,18 +183,18 @@ function M.update_info_window(offset)
       for _, field in ipairs(tpl.fields) do
         local fo = field.offset + 1
         if field.type == "float3" and fo + 11 <= #vslice then
-          local x = unpack.f32_le(vslice, fo)
-          local y = unpack.f32_le(vslice, fo + 4)
-          local z = unpack.f32_le(vslice, fo + 8)
+          local x = unpack.f32(vslice, fo)
+          local y = unpack.f32(vslice, fo + 4)
+          local z = unpack.f32(vslice, fo + 8)
           table.insert(lines, string.format(" %s: (%.4f, %.4f, %.4f)", field.name, x, y, z))
           table.insert(hl_map, { "HexInspFloat", #lines })
         elseif field.type == "float2" and fo + 7 <= #vslice then
-          local x = unpack.f32_le(vslice, fo)
-          local y = unpack.f32_le(vslice, fo + 4)
+          local x = unpack.f32(vslice, fo)
+          local y = unpack.f32(vslice, fo + 4)
           table.insert(lines, string.format(" %s: (%.4f, %.4f)", field.name, x, y))
           table.insert(hl_map, { "HexInspFloat", #lines })
         elseif field.type == "float1" and fo + 3 <= #vslice then
-          local x = unpack.f32_le(vslice, fo)
+          local x = unpack.f32(vslice, fo)
           table.insert(lines, string.format(" %s: %.4f", field.name, x))
           table.insert(hl_map, { "HexInspFloat", #lines })
         elseif field.type == "u8" and fo <= #vslice then
@@ -198,15 +202,15 @@ function M.update_info_window(offset)
           table.insert(lines, string.format(" %s: %d (0x%02X)", field.name, v, v))
           table.insert(hl_map, { "HexInspUint", #lines })
         elseif field.type == "u16" and fo + 1 <= #vslice then
-          local v = unpack.u16_le(vslice, fo)
+          local v = unpack.u16(vslice, fo)
           table.insert(lines, string.format(" %s: %d", field.name, v))
           table.insert(hl_map, { "HexInspUint", #lines })
         elseif field.type == "u32" and fo + 3 <= #vslice then
-          local v = unpack.u32_le(vslice, fo)
+          local v = unpack.u32(vslice, fo)
           table.insert(lines, string.format(" %s: %d", field.name, v))
           table.insert(hl_map, { "HexInspUint", #lines })
         elseif field.type == "i32" and fo + 3 <= #vslice then
-          local v = unpack.i32_le(vslice, fo)
+          local v = unpack.i32(vslice, fo)
           table.insert(lines, string.format(" %s: %d", field.name, v))
           table.insert(hl_map, { "HexInspInt", #lines })
         end
@@ -263,6 +267,10 @@ function M.update_info_window(offset)
   table.insert(lines, " T  Cycle template")
   table.insert(hl_map, { "HexInspLabel", #lines })
   table.insert(lines, " t  Pick template")
+  table.insert(hl_map, { "HexInspLabel", #lines })
+  table.insert(lines, " B  Toggle endian")
+  table.insert(hl_map, { "HexInspLabel", #lines })
+  table.insert(lines, " H  Byte histogram")
   table.insert(hl_map, { "HexInspLabel", #lines })
   table.insert(lines, " q  Quit")
   table.insert(hl_map, { "HexInspLabel", #lines })

@@ -311,6 +311,7 @@ function M.update_info_window(offset)
         if #line < 35 then
             lines[i] = line .. string.rep(" ", 35 - #line)
         end
+        lines[i] = lines[i] .. " "
     end
 
     vim.bo[state.info_buf].modifiable = true

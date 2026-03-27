@@ -7,10 +7,10 @@ assignees: ''
 
 ---
 
-## 🐛 Bug Description
+##  Bug Description
 A clear and concise description of what the bug is. 
 
-## 📸 Screenshots
+##  Screenshots
 If applicable, add screenshots to help explain your problem. (Especially helpful for cursor offset issues!)
 
 ## 💻 Environment Information

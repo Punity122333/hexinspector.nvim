@@ -12,306 +12,333 @@ local search = require("hexinspector.search")
 local actions = require("hexinspector.actions")
 
 function M.open(path)
-  path = path or vim.fn.expand("%:p")
-  if path == "" or vim.fn.filereadable(path) == 0 then
-    vim.notify("HexEditor: Cannot read file", vim.log.levels.ERROR)
-    return
-  end
-
-  if state.main_win and vim.api.nvim_win_is_valid(state.main_win) then
-    actions.close_inspector()
-  end
-
-  highlights.setup_highlights()
-
-  state.prev_win = vim.api.nvim_get_current_win()
-
-  local fsize = fileio.get_file_size(path)
-  if not fsize or fsize == 0 then
-    vim.notify("HexEditor: File is empty or unreadable", vim.log.levels.ERROR)
-    return
-  end
-
-  state.file_path = path
-  state.file_size = fsize
-  state.dirty = false
-  state.undo_stack = {}
-  state.redo_stack = {}
-  state.selecting = false
-  state.selection_start = nil
-  state.selection_end = nil
-  state.yank_register = nil
-  state.chunk_cache = {}
-  state.chunk_dirty = {}
-  state.invalidate_viewport_cache()
-
-  local BYTES_PER_LINE = cfg.BYTES_PER_LINE
-  local ASCII_START_COL = cfg.ASCII_START_COL
-  local MAX_MEMORY_FILE = cfg.MAX_MEMORY_FILE
-
-  local lines
-  if fsize > MAX_MEMORY_FILE then
-    state.big_file = true
-    state.raw_data = nil
-    local total = display.total_lines_for_file()
-    local preview_lines = math.min(total, vim.o.lines - 8)
-    lines = display.format_lines_for_viewport(0, preview_lines)
-  else
-    state.big_file = false
-    local data = fileio.read_file(path)
-    if not data or #data == 0 then
-      vim.notify("HexEditor: File is empty or unreadable", vim.log.levels.ERROR)
-      return
-    end
-    state.raw_data = data
-    lines = display.format_lines(data)
-  end
-
-  local total_line_count = state.big_file and display.total_lines_for_file() or #lines
-
-  local ui_width = vim.o.columns
-  local ui_height = vim.o.lines
-  local main_width = ASCII_START_COL + BYTES_PER_LINE + math.floor((BYTES_PER_LINE - 1) / 4) + 10
-  if main_width > ui_width - 4 then
-    main_width = ui_width - 4
-  end
-  local info_width = 36
-  local total_width = main_width + info_width + 3
-  local main_height = math.min(total_line_count, ui_height - 8)
-  if main_height < 10 then
-    main_height = 10
-  end
-
-  local start_col = math.floor((ui_width - total_width) / 2)
-  if start_col < 0 then
-    start_col = 0
-  end
-  local start_row = math.floor((ui_height - main_height - 4) / 2) + 1
-  if start_row < 0 then
-    start_row = 0
-  end
-
-  local fname = vim.fn.fnamemodify(path, ":t")
-  local size_str
-  if fsize >= 1048576 then
-    size_str = string.format("%.2f MB", fsize / 1048576)
-  elseif fsize >= 1024 then
-    size_str = string.format("%.1f KB", fsize / 1024)
-  else
-    size_str = fsize .. " B"
-  end
-  local tpl = templates.list[state.current_template]
-  local big_mark = state.big_file and " │ STREAM" or ""
-  local endian_mark = state.big_endian and " │ BE" or " │ LE"
-  local title = " HexEditor │ " .. fname .. " │ " .. size_str .. " │ " .. tpl.name .. endian_mark .. big_mark .. " "
-
-  state.backdrop_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[state.backdrop_buf].buftype = "nofile"
-  vim.bo[state.backdrop_buf].bufhidden = "wipe"
-  vim.bo[state.backdrop_buf].swapfile = false
-  state.backdrop_win = vim.api.nvim_open_win(state.backdrop_buf, false, {
-    relative = "editor",
-    width = ui_width,
-    height = ui_height,
-    row = 0,
-    col = 0,
-    style = "minimal",
-    border = "none",
-    focusable = false,
-    zindex = 40,
-    noautocmd = true,
-  })
-  vim.wo[state.backdrop_win].winblend = 0
-  vim.wo[state.backdrop_win].winhighlight = "Normal:HexInspBackdrop"
-
-  state.main_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[state.main_buf].buftype = "nofile"
-  vim.bo[state.main_buf].bufhidden = "wipe"
-  vim.bo[state.main_buf].swapfile = false
-  vim.bo[state.main_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(state.main_buf, 0, -1, false, lines)
-  vim.bo[state.main_buf].modifiable = false
-
-  state.main_win = vim.api.nvim_open_win(state.main_buf, true, {
-    relative = "editor",
-    width = main_width,
-    height = main_height,
-    row = start_row,
-    col = start_col,
-    style = "minimal",
-    border = "rounded",
-    title = title,
-    title_pos = "center",
-    noautocmd = true,
-    zindex = 50,
-  })
-
-  vim.wo[state.main_win].number = false
-  vim.wo[state.main_win].relativenumber = false
-  vim.wo[state.main_win].signcolumn = "no"
-  vim.wo[state.main_win].cursorline = true
-  vim.wo[state.main_win].wrap = false
-  vim.wo[state.main_win].winblend = 0
-  vim.wo[state.main_win].winhighlight = "Normal:HexInspNormal,FloatBorder:HexInspBorder,FloatTitle:HexInspTitle,CursorLine:HexInspCursorLine"
-
-  highlights.apply_line_highlights(state.main_buf, lines, state.raw_data, state.big_file and 0 or nil)
-
-  state.info_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[state.info_buf].buftype = "nofile"
-  vim.bo[state.info_buf].bufhidden = "wipe"
-  vim.bo[state.info_buf].swapfile = false
-  vim.bo[state.info_buf].modifiable = false
-
-  state.info_win = vim.api.nvim_open_win(state.info_buf, false, {
-    relative = "editor",
-    width = info_width,
-    height = main_height,
-    row = start_row,
-    col = start_col + main_width + 2,
-    style = "minimal",
-    border = "rounded",
-    title = " Data Inspector ",
-    title_pos = "center",
-    noautocmd = true,
-    focusable = false,
-    zindex = 50,
-  })
-
-  vim.wo[state.info_win].number = false
-  vim.wo[state.info_win].relativenumber = false
-  vim.wo[state.info_win].signcolumn = "no"
-  vim.wo[state.info_win].wrap = false
-  vim.wo[state.info_win].winblend = 0
-  vim.wo[state.info_win].winhighlight = "Normal:HexInspInfoNormal,FloatBorder:HexInspBorder,FloatTitle:HexInspTitle"
-
-  local function on_cursor_move()
-    if not state.main_win or not vim.api.nvim_win_is_valid(state.main_win) then
-      return
-    end
-    local offset = cursor.get_byte_offset_from_cursor()
-    highlights.highlight_cursor_byte(offset)
-    cursor.update_info_window(offset)
-  end
-
-  state.cursor_au = vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-    buffer = state.main_buf,
-    callback = on_cursor_move,
-  })
-
-  local kopts = { buffer = state.main_buf, nowait = true, silent = true }
-
-  vim.keymap.set("n", "q", actions.close_inspector, kopts)
-  vim.keymap.set("n", "<Esc>", function()
-    if state.selecting then
-      state.selecting = false
-      state.selection_start = nil
-      state.selection_end = nil
-      vim.notify("Selection cleared", vim.log.levels.INFO)
-      local off = cursor.get_byte_offset_from_cursor()
-      highlights.highlight_cursor_byte(off)
-      cursor.update_info_window(off)
-    else
-      actions.close_inspector()
-    end
-  end, kopts)
-
-  vim.keymap.set("n", "g", search.prompt_jump, kopts)
-  vim.keymap.set("n", "/", search.prompt_search_bytes, kopts)
-  vim.keymap.set("n", "n", search.search_next, kopts)
-  vim.keymap.set("n", "e", actions.do_edit_byte, kopts)
-  vim.keymap.set("n", "E", actions.do_edit_ascii, kopts)
-  vim.keymap.set("n", "m", actions.do_edit_multi, kopts)
-  vim.keymap.set("n", "I", actions.do_insert_bytes, kopts)
-  vim.keymap.set("n", "x", actions.do_delete_byte, kopts)
-  vim.keymap.set("n", "u", actions.do_undo, kopts)
-  vim.keymap.set("n", "U", actions.do_redo, kopts)
-  vim.keymap.set("n", "w", actions.do_save, kopts)
-  vim.keymap.set("n", "v", actions.do_toggle_select, kopts)
-  vim.keymap.set("n", "y", actions.do_yank, kopts)
-  vim.keymap.set("n", "p", actions.do_paste, kopts)
-  vim.keymap.set("n", "F", actions.do_fill_range, kopts)
-  vim.keymap.set("n", "R", actions.do_replace_pattern, kopts)
-  vim.keymap.set("n", "B", actions.do_toggle_endian, kopts)
-  vim.keymap.set("n", "H", actions.do_byte_histogram, kopts)
-
-  vim.keymap.set("n", "T", function()
-    state.current_template = (state.current_template % #templates.list) + 1
-    display.update_title()
-    local off = cursor.get_byte_offset_from_cursor()
-    cursor.update_info_window(off)
-    vim.notify("Template: " .. templates.list[state.current_template].name, vim.log.levels.INFO)
-  end, kopts)
-
-  vim.keymap.set("n", "t", function()
-    local names = {}
-    for i, t in ipairs(templates.list) do
-      local marker = i == state.current_template and " ●" or ""
-      table.insert(names, t.name .. marker)
-    end
-    vim.ui.select(names, { prompt = "Vertex Template:" }, function(_, idx)
-      if not idx then
+    path = path or vim.fn.expand("%:p")
+    if path == "" or vim.fn.filereadable(path) == 0 then
+        vim.notify("HexEditor: Cannot read file", vim.log.levels.ERROR)
         return
-      end
-      state.current_template = idx
-      display.update_title()
-      local off = cursor.get_byte_offset_from_cursor()
-      cursor.update_info_window(off)
-      vim.notify("Template: " .. templates.list[idx].name, vim.log.levels.INFO)
-    end)
-  end, kopts)
+    end
 
-  vim.keymap.set("n", "<C-d>", function()
-    local target = cursor.get_byte_offset_from_cursor() + (BYTES_PER_LINE * 16)
-    cursor.jump_to_offset(target)
-  end, kopts)
+    if state.main_win and vim.api.nvim_win_is_valid(state.main_win) then
+        actions.close_inspector()
+    end
 
-  vim.keymap.set("n", "<C-u>", function()
-    local target = cursor.get_byte_offset_from_cursor() - (BYTES_PER_LINE * 16)
-    cursor.jump_to_offset(target)
-  end, kopts)
+    highlights.setup_highlights()
 
-  vim.keymap.set("n", "G", function()
-    cursor.jump_to_offset(state.file_size - 1)
-  end, kopts)
+    state.prev_win = vim.api.nvim_get_current_win()
 
-  vim.keymap.set("n", "gg", function()
-    cursor.jump_to_offset(0)
-  end, kopts)
+    local fsize = fileio.get_file_size(path)
+    if not fsize or fsize == 0 then
+        vim.notify("HexEditor: File is empty or unreadable", vim.log.levels.ERROR)
+        return
+    end
 
-  vim.api.nvim_create_autocmd("WinClosed", {
-    buffer = state.main_buf,
-    once = true,
-    callback = function()
-      vim.schedule(actions.close_inspector)
-    end,
-  })
+    state.file_path = path
+    state.file_size = fsize
+    state.dirty = false
+    state.undo_stack = {}
+    state.redo_stack = {}
+    state.selecting = false
+    state.selection_start = nil
+    state.selection_end = nil
+    state.yank_register = nil
+    state.chunk_cache = {}
+    state.chunk_dirty = {}
+    state.viewport_top_line = 0
+    state.invalidate_viewport_cache()
 
-  vim.schedule(on_cursor_move)
+    local BYTES_PER_LINE = cfg.BYTES_PER_LINE
+    local ASCII_START_COL = cfg.ASCII_START_COL
+    local MAX_MEMORY_FILE = cfg.MAX_MEMORY_FILE
+
+    local lines
+    if fsize > MAX_MEMORY_FILE then
+        state.big_file = true
+        state.raw_data = nil
+        local total = display.total_lines_for_file()
+        -- Load 3× the window height so the user can scroll a full screen in either
+        -- direction before the first viewport reload is needed.
+        local preview_lines = math.min(total, (vim.o.lines - 8) * 3)
+        lines = display.format_lines_for_viewport(0, preview_lines)
+    else
+        state.big_file = false
+        local data = fileio.read_file(path)
+        if not data or #data == 0 then
+            vim.notify("HexEditor: File is empty or unreadable", vim.log.levels.ERROR)
+            return
+        end
+        state.raw_data = data
+        lines = display.format_lines(data)
+    end
+
+    local total_line_count = state.big_file and display.total_lines_for_file() or #lines
+
+    local ui_width = vim.o.columns
+    local ui_height = vim.o.lines
+    local main_width = ASCII_START_COL + BYTES_PER_LINE + math.floor((BYTES_PER_LINE - 1) / 4) + 10
+    if main_width > ui_width - 4 then
+        main_width = ui_width - 4
+    end
+    local info_width = 36
+    local total_width = main_width + info_width + 3
+    local main_height = math.min(total_line_count, ui_height - 8)
+    if main_height < 10 then
+        main_height = 10
+    end
+
+    local start_col = math.floor((ui_width - total_width) / 2)
+    if start_col < 0 then
+        start_col = 0
+    end
+    local start_row = math.floor((ui_height - main_height - 4) / 2) + 1
+    if start_row < 0 then
+        start_row = 0
+    end
+
+    local fname = vim.fn.fnamemodify(path, ":t")
+    local size_str
+    if fsize >= 1048576 then
+        size_str = string.format("%.2f MB", fsize / 1048576)
+    elseif fsize >= 1024 then
+        size_str = string.format("%.1f KB", fsize / 1024)
+    else
+        size_str = fsize .. " B"
+    end
+    local tpl = templates.list[state.current_template]
+    local big_mark = state.big_file and " │ STREAM" or ""
+    local endian_mark = state.big_endian and " │ BE" or " │ LE"
+    local title = " HexEditor │ " .. fname .. " │ " .. size_str .. " │ " .. tpl.name .. endian_mark .. big_mark .. " "
+
+    state.backdrop_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[state.backdrop_buf].buftype = "nofile"
+    vim.bo[state.backdrop_buf].bufhidden = "wipe"
+    vim.bo[state.backdrop_buf].swapfile = false
+    state.backdrop_win = vim.api.nvim_open_win(state.backdrop_buf, false, {
+        relative = "editor",
+        width = ui_width,
+        height = ui_height,
+        row = 0,
+        col = 0,
+        style = "minimal",
+        border = "none",
+        focusable = false,
+        zindex = 40,
+        noautocmd = true,
+    })
+    vim.wo[state.backdrop_win].winblend = 0
+    vim.wo[state.backdrop_win].winhighlight = "Normal:HexInspBackdrop"
+
+    state.main_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[state.main_buf].buftype = "nofile"
+    vim.bo[state.main_buf].bufhidden = "wipe"
+    vim.bo[state.main_buf].swapfile = false
+    vim.bo[state.main_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(state.main_buf, 0, -1, false, lines)
+    vim.bo[state.main_buf].modifiable = false
+
+    state.main_win = vim.api.nvim_open_win(state.main_buf, true, {
+        relative = "editor",
+        width = main_width,
+        height = main_height,
+        row = start_row,
+        col = start_col,
+        style = "minimal",
+        border = "rounded",
+        title = title,
+        title_pos = "center",
+        noautocmd = true,
+        zindex = 50,
+    })
+
+    vim.wo[state.main_win].number = false
+    vim.wo[state.main_win].relativenumber = false
+    vim.wo[state.main_win].signcolumn = "no"
+    vim.wo[state.main_win].cursorline = true
+    vim.wo[state.main_win].wrap = false
+    vim.wo[state.main_win].winblend = 0
+    vim.wo[state.main_win].winhighlight =
+    "Normal:HexInspNormal,FloatBorder:HexInspBorder,FloatTitle:HexInspTitle,CursorLine:HexInspCursorLine"
+
+    highlights.apply_line_highlights(state.main_buf, lines, state.raw_data, state.big_file and 0 or nil)
+
+    state.info_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[state.info_buf].buftype = "nofile"
+    vim.bo[state.info_buf].bufhidden = "wipe"
+    vim.bo[state.info_buf].swapfile = false
+    vim.bo[state.info_buf].modifiable = false
+
+    state.info_win = vim.api.nvim_open_win(state.info_buf, false, {
+        relative = "editor",
+        width = info_width,
+        height = main_height,
+        row = start_row,
+        col = start_col + main_width + 2,
+        style = "minimal",
+        border = "rounded",
+        title = " Data Inspector ",
+        title_pos = "center",
+        noautocmd = true,
+        focusable = false,
+        zindex = 50,
+    })
+
+    vim.wo[state.info_win].number = false
+    vim.wo[state.info_win].relativenumber = false
+    vim.wo[state.info_win].signcolumn = "no"
+    vim.wo[state.info_win].wrap = false
+    vim.wo[state.info_win].winblend = 0
+    vim.wo[state.info_win].winhighlight = "Normal:HexInspInfoNormal,FloatBorder:HexInspBorder,FloatTitle:HexInspTitle"
+
+    local function on_cursor_move()
+        if not state.main_win or not vim.api.nvim_win_is_valid(state.main_win) then
+            return
+        end
+        -- In big file streaming mode the buffer only holds a sliding viewport of
+        -- the file.  Detect when the cursor approaches either edge of the loaded
+        -- region and reload the viewport so the user can scroll continuously.
+        if state.big_file then
+            local buf_line_count = vim.api.nvim_buf_line_count(state.main_buf)
+            local cur_pos        = vim.api.nvim_win_get_cursor(state.main_win)
+            local cur_buf_row    = cur_pos[1] -- 1-based
+            local win_height     = vim.api.nvim_win_get_height(state.main_win)
+            local threshold      = math.max(5, math.floor(win_height / 2))
+            local total          = display.total_lines_for_file()
+            -- Don't reload when already at the very start / end of the file.
+            local at_file_start  = state.viewport_top_line == 0
+            local viewport_end   = state.viewport_top_line + buf_line_count - 1
+            local at_file_end    = viewport_end >= total - 1
+            local near_top       = cur_buf_row <= threshold and not at_file_start
+            local near_bottom    = cur_buf_row >= buf_line_count - threshold and not at_file_end
+            if near_top or near_bottom then
+                display.refresh_display()
+                -- refresh_display repositions the cursor and will fire CursorMoved
+                -- again; that second event handles highlights and the info window.
+                return
+            end
+        end
+        local offset = cursor.get_byte_offset_from_cursor()
+        highlights.highlight_cursor_byte(offset)
+        cursor.update_info_window(offset)
+    end
+
+    state.cursor_au = vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        buffer = state.main_buf,
+        callback = on_cursor_move,
+    })
+
+    local kopts = { buffer = state.main_buf, nowait = true, silent = true }
+
+    vim.keymap.set("n", "q", actions.close_inspector, kopts)
+    vim.keymap.set("n", "<Esc>", function()
+        if state.selecting then
+            state.selecting = false
+            state.selection_start = nil
+            state.selection_end = nil
+            vim.notify("Selection cleared", vim.log.levels.INFO)
+            local off = cursor.get_byte_offset_from_cursor()
+            highlights.highlight_cursor_byte(off)
+            cursor.update_info_window(off)
+        else
+            actions.close_inspector()
+        end
+    end, kopts)
+
+    vim.keymap.set("n", "g", search.prompt_jump, kopts)
+    vim.keymap.set("n", "/", search.prompt_search_bytes, kopts)
+    vim.keymap.set("n", "n", search.search_next, kopts)
+    vim.keymap.set("n", "e", actions.do_edit_byte, kopts)
+    vim.keymap.set("n", "E", actions.do_edit_ascii, kopts)
+    vim.keymap.set("n", "m", actions.do_edit_multi, kopts)
+    vim.keymap.set("n", "I", actions.do_insert_bytes, kopts)
+    vim.keymap.set("n", "x", actions.do_delete_byte, kopts)
+    vim.keymap.set("n", "u", actions.do_undo, kopts)
+    vim.keymap.set("n", "U", actions.do_redo, kopts)
+    vim.keymap.set("n", "w", actions.do_save, kopts)
+    vim.keymap.set("n", "v", actions.do_toggle_select, kopts)
+    vim.keymap.set("n", "y", actions.do_yank, kopts)
+    vim.keymap.set("n", "p", actions.do_paste, kopts)
+    vim.keymap.set("n", "F", actions.do_fill_range, kopts)
+    vim.keymap.set("n", "R", actions.do_replace_pattern, kopts)
+    vim.keymap.set("n", "B", actions.do_toggle_endian, kopts)
+    vim.keymap.set("n", "H", actions.do_byte_histogram, kopts)
+
+    vim.keymap.set("n", "T", function()
+        state.current_template = (state.current_template % #templates.list) + 1
+        display.update_title()
+        local off = cursor.get_byte_offset_from_cursor()
+        cursor.update_info_window(off)
+        vim.notify("Template: " .. templates.list[state.current_template].name, vim.log.levels.INFO)
+    end, kopts)
+
+    vim.keymap.set("n", "t", function()
+        local names = {}
+        for i, t in ipairs(templates.list) do
+            local marker = i == state.current_template and " ●" or ""
+            table.insert(names, t.name .. marker)
+        end
+        vim.ui.select(names, { prompt = "Vertex Template:" }, function(_, idx)
+            if not idx then
+                return
+            end
+            state.current_template = idx
+            display.update_title()
+            local off = cursor.get_byte_offset_from_cursor()
+            cursor.update_info_window(off)
+            vim.notify("Template: " .. templates.list[idx].name, vim.log.levels.INFO)
+        end)
+    end, kopts)
+
+    vim.keymap.set("n", "<C-d>", function()
+        local target = cursor.get_byte_offset_from_cursor() + (BYTES_PER_LINE * 16)
+        cursor.jump_to_offset(target)
+    end, kopts)
+
+    vim.keymap.set("n", "<C-u>", function()
+        local target = cursor.get_byte_offset_from_cursor() - (BYTES_PER_LINE * 16)
+        cursor.jump_to_offset(target)
+    end, kopts)
+
+    vim.keymap.set("n", "G", function()
+        cursor.jump_to_offset(state.file_size - 1)
+    end, kopts)
+
+    vim.keymap.set("n", "gg", function()
+        cursor.jump_to_offset(0)
+    end, kopts)
+
+    vim.api.nvim_create_autocmd("WinClosed", {
+        buffer = state.main_buf,
+        once = true,
+        callback = function()
+            vim.schedule(actions.close_inspector)
+        end,
+    })
+
+    vim.schedule(on_cursor_move)
 end
 
 function M.setup(opts)
-  opts = opts or {}
-  if opts.colors then
-    cfg.config.colors = vim.tbl_extend("force", cfg.config.colors, opts.colors)
-  end
-  if opts.bytes_per_line then
-    cfg.config.bytes_per_line = opts.bytes_per_line
-  end
-  if opts.max_undo then
-    cfg.config.max_undo = opts.max_undo
-  end
-  if opts.chunk_size then
-    cfg.config.chunk_size = opts.chunk_size
-  end
-  if opts.max_memory_file then
-    cfg.config.max_memory_file = opts.max_memory_file
-  end
-  if opts.vertex_templates then
-    for _, t in ipairs(opts.vertex_templates) do
-      table.insert(templates.list, t)
+    opts = opts or {}
+    if opts.colors then
+        cfg.config.colors = vim.tbl_extend("force", cfg.config.colors, opts.colors)
     end
-  end
-  cfg.apply_config()
+    if opts.bytes_per_line then
+        cfg.config.bytes_per_line = opts.bytes_per_line
+    end
+    if opts.max_undo then
+        cfg.config.max_undo = opts.max_undo
+    end
+    if opts.chunk_size then
+        cfg.config.chunk_size = opts.chunk_size
+    end
+    if opts.max_memory_file then
+        cfg.config.max_memory_file = opts.max_memory_file
+    end
+    if opts.vertex_templates then
+        for _, t in ipairs(opts.vertex_templates) do
+            table.insert(templates.list, t)
+        end
+    end
+    cfg.apply_config()
 end
 
 return M

@@ -12,6 +12,8 @@ M.file_path = nil
 M.file_size = 0
 M.ns = vim.api.nvim_create_namespace("HexInspector")
 M.cursor_au = nil
+M.winclosed_au = nil
+M.closing = false
 M.dirty = false
 M.undo_stack = {}
 M.redo_stack = {}
@@ -49,6 +51,8 @@ function M.reset()
     M.file_path = nil
     M.file_size = 0
     M.cursor_au = nil
+    M.winclosed_au = nil
+    M.closing = false
     M.dirty = false
     M.undo_stack = {}
     M.redo_stack = {}

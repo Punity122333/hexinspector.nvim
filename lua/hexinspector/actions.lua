@@ -590,12 +590,57 @@ function M.do_byte_histogram()
 end
 
 function M.close_inspector()
+  -- Idempotency / re-entrancy guard: WinClosed (scheduled) and manual `q`
+  -- can both invoke this. The second invocation must be a no-op.
+  if state.closing then
+    return
+  end
+  if
+    state.main_win == nil
+    and state.main_buf == nil
+    and state.info_win == nil
+    and state.info_buf == nil
+    and state.backdrop_win == nil
+    and state.backdrop_buf == nil
+    and state.cursor_au == nil
+    and state.winclosed_au == nil
+  then
+    return
+  end
+  state.closing = true
+
   local file_path = state.file_path
   local prev_win = state.prev_win
 
+  local function is_exiting()
+    local ok, val = pcall(vim.api.nvim_get_vvar, "exiting")
+    if not ok then
+      return false
+    end
+    return val ~= nil and val ~= vim.NIL
+  end
+
+  local function safe_del_autocmd(id)
+    if id ~= nil then
+      pcall(vim.api.nvim_del_autocmd, id)
+    end
+  end
+
+  local function safe_close_win(win)
+    if win ~= nil and vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+  end
+
+  local function safe_delete_buf(buf)
+    if buf ~= nil and vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+
   local function restore_focus()
-    if prev_win and vim.api.nvim_win_is_valid(prev_win) then
-      vim.api.nvim_set_current_win(prev_win)
+    if prev_win ~= nil and vim.api.nvim_win_is_valid(prev_win) then
+      pcall(vim.api.nvim_set_current_win, prev_win)
     end
   end
 
@@ -603,11 +648,15 @@ function M.close_inspector()
     if not file_path or file_path == "" then
       return
     end
-    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local ok, bufs = pcall(vim.api.nvim_list_bufs)
+    if not ok then
+      return
+    end
+    for _, buf in ipairs(bufs) do
       if vim.api.nvim_buf_is_loaded(buf) then
-        local name = vim.api.nvim_buf_get_name(buf)
-        if name == file_path then
-          vim.api.nvim_buf_call(buf, function()
+        local ok_name, name = pcall(vim.api.nvim_buf_get_name, buf)
+        if ok_name and name == file_path then
+          pcall(vim.api.nvim_buf_call, buf, function()
             vim.cmd("edit!")
           end)
         end
@@ -615,34 +664,36 @@ function M.close_inspector()
     end
   end
 
-  local function do_close(saved)
-    if state.cursor_au then
-      vim.api.nvim_del_autocmd(state.cursor_au)
-      state.cursor_au = nil
-    end
-    if state.info_win and vim.api.nvim_win_is_valid(state.info_win) then
-      vim.api.nvim_win_close(state.info_win, true)
-    end
-    if state.info_buf and vim.api.nvim_buf_is_valid(state.info_buf) then
-      vim.api.nvim_buf_delete(state.info_buf, { force = true })
-    end
-    if state.main_win and vim.api.nvim_win_is_valid(state.main_win) then
-      vim.api.nvim_win_close(state.main_win, true)
-    end
-    if state.main_buf and vim.api.nvim_buf_is_valid(state.main_buf) then
-      vim.api.nvim_buf_delete(state.main_buf, { force = true })
-    end
-    if state.backdrop_win and vim.api.nvim_win_is_valid(state.backdrop_win) then
-      vim.api.nvim_win_close(state.backdrop_win, true)
-    end
-    if state.backdrop_buf and vim.api.nvim_buf_is_valid(state.backdrop_buf) then
-      vim.api.nvim_buf_delete(state.backdrop_buf, { force = true })
-    end
+  local function do_close(saved, exiting)
+    -- Buffer-local autocmds are auto-deleted when their buffer is wiped
+    -- (e.g. during `:q` / VimLeave). The ids may therefore already be
+    -- invalid here, so never let `nvim_del_autocmd` throw.
+    safe_del_autocmd(state.cursor_au)
+    state.cursor_au = nil
+    safe_del_autocmd(state.winclosed_au)
+    state.winclosed_au = nil
+    safe_close_win(state.info_win)
+    safe_delete_buf(state.info_buf)
+    safe_close_win(state.main_win)
+    safe_delete_buf(state.main_buf)
+    safe_close_win(state.backdrop_win)
+    safe_delete_buf(state.backdrop_buf)
     state.reset()
+    state.closing = false
+    if exiting then
+      -- Neovim is quitting: don't touch windows/buffers or schedule work.
+      return
+    end
     if saved then
       vim.schedule(reload_source_buffer)
     end
     vim.schedule(restore_focus)
+  end
+
+  if is_exiting() then
+    -- Never prompt during quit; just wipe silently.
+    do_close(false, true)
+    return
   end
 
   if state.dirty then
@@ -651,13 +702,15 @@ function M.close_inspector()
     }, function(choice)
       if choice == "Save and quit" then
         M.do_save()
-        do_close(true)
+        do_close(true, false)
       elseif choice == "Quit without saving" then
-        do_close(false)
+        do_close(false, false)
+      else
+        state.closing = false
       end
     end)
   else
-    do_close(true)
+    do_close(true, false)
   end
 end
 

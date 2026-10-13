@@ -22,6 +22,11 @@ function M.open(path)
         actions.close_inspector()
     end
 
+    -- Fresh open: clear any stale close state (e.g. after Cancel).
+    state.closing = false
+    state.cursor_au = nil
+    state.winclosed_au = nil
+
     highlights.setup_highlights()
 
     state.prev_win = vim.api.nvim_get_current_win()
@@ -305,10 +310,13 @@ function M.open(path)
         cursor.jump_to_offset(0)
     end, kopts)
 
-    vim.api.nvim_create_autocmd("WinClosed", {
+    state.winclosed_au = vim.api.nvim_create_autocmd("WinClosed", {
         buffer = state.main_buf,
         once = true,
         callback = function()
+            if state.closing then
+                return
+            end
             vim.schedule(actions.close_inspector)
         end,
     })
